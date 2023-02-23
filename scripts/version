@@ -18,8 +18,3 @@ fi
 if [ -z "$ARCH" ]; then
     ARCH=amd64
 fi
-
-MAJOR_VERSION=$(echo $VERSION | cut -d "." -f 1)
-MINOR_VERSION=$(echo $VERSION | cut -d "." -f 2)
-
-KUBE_GIT_VERSION_FILE=version.txt
