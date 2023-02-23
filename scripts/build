@@ -12,6 +12,14 @@ if [ -n "$DRONE_TAG" ]; then
     TAG=$DRONE_TAG
 fi
 
+cat <<EOF >"${KUBE_GIT_VERSION_FILE}"
+KUBE_GIT_COMMIT=${COMMIT}
+KUBE_GIT_TREE_STATE=${GIT_TREE_STATE}
+KUBE_GIT_VERSION=${VERSION}
+KUBE_GIT_MAJOR=${MAJOR_VERSION:1}
+KUBE_GIT_MINOR=${MINOR_VERSION}
+EOF
+
 for ARCH in ${OS_ARCH_LINUX}; do
         echo Building kubelet-$ARCH
         build/run.sh make kubelet KUBE_BUILD_PLATFORMS=linux/$ARCH
