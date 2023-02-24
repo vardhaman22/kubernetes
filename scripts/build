@@ -6,6 +6,7 @@ source $(dirname $0)/version
 cd $(dirname $0)/..
 
 OS_ARCH_LINUX="amd64 arm64"
+K8S_BASE="k8s.io/component-base"
 
 mkdir -p output/bin
 if [ -n "$DRONE_TAG" ]; then
@@ -13,18 +14,20 @@ if [ -n "$DRONE_TAG" ]; then
 fi
 
 buildDate=$(date -u '+%Y-%m-%dT%H:%M:%SZ')
-PKG_K8S_BASE="staging/src/k8s.io/component-base"
 GOLDFLAGS="
-    -X ${PKG_K8S_BASE}/version.gitVersion=${TAG}
-    -X ${PKG_K8S_BASE}/version.gitCommit=${COMMIT}
-    -X ${PKG_K8S_BASE}/version.gitTreeState=${GIT_TREE_STATE}
-    -X ${PKG_K8S_BASE}/version.buildDate=${buildDate}
+    -X ${K8S_BASE}/version.gitVersion=${TAG}
+    -X ${K8S_BASE}/version.gitCommit=${COMMIT}
+    -X ${K8S_BASE}/version.gitTreeState=${GIT_TREE_STATE}
+    -X ${K8S_BASE}/version.buildDate=${buildDate}
 "
 
 for ARCH in ${OS_ARCH_LINUX}; do
         echo Building kubelet-$ARCH
         build/run.sh make kubelet KUBE_BUILD_PLATFORMS=linux/$ARCH
         mv _output/dockerized/bin/linux/$ARCH/kubelet .
+        if [ $ARCH = "amd64" ]; then
+            ./kubelet --version
+        fi
         tar -cvzf output/bin/kubelet-$TAG-$ARCH.tar.gz kubelet && rm kubelet
 done
 
