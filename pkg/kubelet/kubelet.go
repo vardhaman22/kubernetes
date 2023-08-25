@@ -245,6 +245,7 @@ type Dependencies struct {
 	RemoteImageService   internalapi.ImageManagerService
 	// remove it after cadvisor.UsingLegacyCadvisorStats dropped.
 	useLegacyCadvisorStats bool
+	remoteRuntimeEndpoint  string
 }
 
 // makePodSourceConfig creates a config.PodConfig from the given
@@ -303,6 +304,7 @@ func PreInitRuntimeService(kubeCfg *kubeletconfiginternal.KubeletConfiguration,
 	}
 
 	kubeDeps.useLegacyCadvisorStats = cadvisor.UsingLegacyCadvisorStats(remoteRuntimeEndpoint)
+	kubeDeps.remoteRuntimeEndpoint = remoteRuntimeEndpoint
 	return nil
 }
 
@@ -589,17 +591,22 @@ func NewMainKubelet(kubeCfg *kubeletconfiginternal.KubeletConfiguration,
 		klet.runtimeClassManager = runtimeclass.NewManager(kubeDeps.KubeClient)
 	}
 
-	// setup containerLogManager for CRI container runtime
-	containerLogManager, err := logs.NewContainerLogManager(
-		klet.runtimeService,
-		kubeDeps.OSInterface,
-		kubeCfg.ContainerLogMaxSize,
-		int(kubeCfg.ContainerLogMaxFiles),
-	)
-	if err != nil {
-		return nil, fmt.Errorf("failed to initialize container log manager: %v", err)
+	// cri-dockerd does not support rotating logs, same as internal dockershim
+	if cadvisor.UsingCriDockerdSocket(kubeDeps.remoteRuntimeEndpoint) {
+		klet.containerLogManager = logs.NewStubContainerLogManager()
+	} else {
+		// setup containerLogManager for CRI container runtime
+		containerLogManager, err := logs.NewContainerLogManager(
+			klet.runtimeService,
+			kubeDeps.OSInterface,
+			kubeCfg.ContainerLogMaxSize,
+			int(kubeCfg.ContainerLogMaxFiles),
+		)
+		if err != nil {
+			return nil, fmt.Errorf("failed to initialize container log manager: %v", err)
+		}
+		klet.containerLogManager = containerLogManager
 	}
-	klet.containerLogManager = containerLogManager
 
 	klet.reasonCache = NewReasonCache()
 	klet.workQueue = queue.NewBasicWorkQueue(klet.clock)
