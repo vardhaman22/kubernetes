@@ -103,14 +103,8 @@ for tag in $NEW_TAGS; do
     done
 
     if [[ $FAIL == 0 ]]; then
-        echo "[INFO] Cherry pick completed successfully. Pushing branch release-${tag} to rancher repository."
-        if ! $(git push --quiet --no-progress origin release-${tag} > /dev/null); then
-            echo "[WARN] Failed while pushing the branch release-${tag} to rancher repository. Skipping the version ${tag}."
-            continue
-        else
-            NEW_RELEASE_BRANCHES+=( "release-${tag}" )
-            echo "[INFO] Successfully pushed branch release-${tag}: https://github.com/rancher/kubernetes/tree/release-${tag}"
-        fi
+        echo "[INFO] Cherry pick completed successfully."
+        NEW_RELEASE_BRANCHES+=( "release-${tag}" )
     else
         git cherry-pick --abort
     fi
