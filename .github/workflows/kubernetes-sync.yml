@@ -50,6 +50,7 @@ jobs:
       image: rancher/dapper:v0.6.0
     permissions:
       contents: write
+      id-token: write
     strategy:
       matrix:
         branches: ${{ fromJSON(needs.create-branches.outputs.new-release-branches) }}
