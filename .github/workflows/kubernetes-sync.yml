@@ -24,6 +24,12 @@ jobs:
           git config --global user.email "41898282+github-actions[bot]@users.noreply.github.com"
           git config --global user.name "github-actions[bot]"
 
+      # - name: Retrieve token from vault
+      #   uses: rancher-eio/read-vault-secrets@main
+      #   with:
+      #     secrets: |
+      #       secret/data/github/repo/${{ github.repository }}/github-token/credentials token | PAT_TOKEN ;
+
       - name: Fetch the new tags from kubernetes/kubernetes repository
         run: $GITHUB_WORKSPACE/rancher-k8s/scripts/check-for-new-tag.sh
 
@@ -32,20 +38,22 @@ jobs:
         run: |
           cd rancher-k8s
           $GITHUB_WORKSPACE/rancher-k8s/scripts/create-release-branch.sh
+        env:
+          GITHUB_TOKEN: ${{ secrets.PAT_TOKEN }}
 
-      - name: 'Tar files'
-        run: |
-          tar -czf rancher-k8s.tar.gz -C rancher-k8s .
+      # - name: 'Tar files'
+      #   run: |
+      #     tar -czf rancher-k8s.tar.gz -C rancher-k8s .
       
-      - name: Push git repo to artifacts
-        uses: actions/upload-artifact@v4
-        with:
-          name: git-repo
-          path: rancher-k8s.tar.gz
+      # - name: Push git repo to artifacts
+      #   uses: actions/upload-artifact@v4
+      #   with:
+      #     name: git-repo
+      #     path: rancher-k8s.tar.gz
 
   build-and-validate:
     needs: create-branches
-    runs-on: runs-on,runner=4cpu-linux-x64,run-id=${{ github.run_id }}
+    runs-on: ubuntu-latest
     container:
       image: rancher/dapper:v0.6.0
     permissions:
@@ -62,49 +70,37 @@ jobs:
           git config --global user.email "41898282+github-actions[bot]@users.noreply.github.com"
           git config --global user.name "github-actions[bot]"
 
-      - name: Download git repo from artifact
-        uses: actions/download-artifact@v4
+      - name: Checkout repository with branch ${{ matrix.branches }}
+        uses: actions/checkout@v4
         with:
-          name: git-repo
+          ref: ${{ matrix.branches }}
 
-      - name: Extract Artifact
-        run: |
-          tar -zxf rancher-k8s.tar.gz
-          rm rancher-k8s.tar.gz
+      # - name: Download git repo from artifact
+      #   uses: actions/download-artifact@v4
+      #   with:
+      #     name: git-repo
+
+      # - name: Extract Artifact
+      #   run: |
+      #     tar -zxf rancher-k8s.tar.gz
+      #     rm rancher-k8s.tar.gz
+
+      # - name: Retrieve token from vault
+      #   uses: rancher-eio/read-vault-secrets@main
+      #   with:
+      #     secrets: |
+      #       secret/data/github/repo/${{ github.repository }}/github-token/credentials token | PAT_TOKEN ;
 
       - name: Build with Dapper for ${{ matrix.branches }}
-        run: |
-          git checkout ${{ matrix.branches }}
-          dapper ci
+        run: dapper ci
 
       - name: List the bin for ${{ matrix.branches }}
         run: ls -lR output/bin
-      
-      - name: Read App Secrets
-        uses: rancher-eio/read-vault-secrets@main
-        with:
-          secrets: |
-            secret/data/github/repo/${{ github.repository }}/github/app-credentials appId | APP_ID ;
-            secret/data/github/repo/${{ github.repository }}/github/app-credentials privateKey | PRIVATE_KEY
-
-      - name: Create App Token
-        uses: actions/create-github-app-token@v1
-        id: app-token
-        with:
-          app-id: ${{ env.APP_ID }}
-          private-key: ${{ env.PRIVATE_KEY }}
 
       - name: Push release tag for ${{ matrix.branches }}
         run: |
           # To stash any changes created by dapper CI run
           git stash --all
-
-          if ! $(git push --quiet --no-progress origin $RELEASE_BRANCH > /dev/null); then
-            echo "[ERROR] Failed while pushing the branch $RELEASE_BRANCH to rancher repository. Skipping the version $RELEASE_BRANCH."
-            exit 1
-          else
-            echo "[INFO] Successfully pushed branch $RELEASE_BRANCH: https://github.com/rancher/kubernetes/tree/$RELEASE_BRANCH"
-          fi
 
           # Remove the 'release-' prefix to create the tag name
           TAG="${RELEASE_BRANCH#release-}"
@@ -124,5 +120,5 @@ jobs:
               echo "[INFO] Successfully pushed tag $TAG: https://github.com/rancher/kubernetes/releases/tag/$TAG"
           fi
         env:
-          GITHUB_TOKEN: ${{ steps.app-token.outputs.token }}
+          GITHUB_TOKEN: ${{ secrets.PAT_TOKEN }}
           RELEASE_BRANCH: ${{ matrix.branches }}
