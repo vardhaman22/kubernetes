@@ -7,7 +7,9 @@ on:
 
 jobs:
   create-branches:
-    runs-on: ubuntu-latest
+    runs-on: runs-on,runner=4cpu-linux-x64,run-id=${{ github.run_id }}
+    permissions:
+      id-token: write
     outputs:
       new-release-branches: ${{ steps.create-release-branches.outputs.NEW_RELEASE_BRANCHES }}
     steps:
@@ -24,6 +26,19 @@ jobs:
           git config --global user.email "41898282+github-actions[bot]@users.noreply.github.com"
           git config --global user.name "github-actions[bot]"
 
+      - name: Read App Secrets
+        uses: rancher-eio/read-vault-secrets@main
+        with:
+          secrets: |
+            secret/data/github/repo/${{ github.repository }}/github/app-credentials appId | APP_ID ;
+            secret/data/github/repo/${{ github.repository }}/github/app-credentials privateKey | PRIVATE_KEY
+      - name: Create App Token
+        uses: actions/create-github-app-token@v1
+        id: app-token
+        with:
+          app-id: ${{ env.APP_ID }}
+          private-key: ${{ env.PRIVATE_KEY }}
+
       - name: Fetch the new tags from kubernetes/kubernetes repository
         run: $GITHUB_WORKSPACE/rancher-k8s/scripts/check-for-new-tag.sh
 
@@ -32,16 +47,18 @@ jobs:
         run: |
           cd rancher-k8s
           $GITHUB_WORKSPACE/rancher-k8s/scripts/create-release-branch.sh
+        env:
+          GITHUB_TOKEN: ${{ steps.app-token.outputs.token }}
 
-      - name: 'Tar files'
-        run: |
-          tar -czf rancher-k8s.tar.gz -C rancher-k8s .
+      # - name: 'Tar files'
+      #   run: |
+      #     tar -czf rancher-k8s.tar.gz -C rancher-k8s .
       
-      - name: Push git repo to artifacts
-        uses: actions/upload-artifact@v4
-        with:
-          name: git-repo
-          path: rancher-k8s.tar.gz
+      # - name: Push git repo to artifacts
+      #   uses: actions/upload-artifact@v4
+      #   with:
+      #     name: git-repo
+      #     path: rancher-k8s.tar.gz
 
   build-and-validate:
     needs: create-branches
@@ -56,13 +73,35 @@ jobs:
         branches: ${{ fromJSON(needs.create-branches.outputs.new-release-branches) }}
       fail-fast: false
     steps:
+      - name: Fix the not-a-git-repository issue
+        run: |
+          apk -U add git
+          git config --global --add safe.directory "$GITHUB_WORKSPACE"
+          git config --global user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git config --global user.name "github-actions[bot]"
+
+      - name: Checkout repository with branch ${{ matrix.branches }}
+        uses: actions/checkout@v4
+        with:
+          ref: ${{ matrix.branches }}
+
+      # - name: Download git repo from artifact
+      #   uses: actions/download-artifact@v4
+      #   with:
+      #     name: git-repo
+
+      # - name: Extract Artifact
+      #   run: |
+      #     tar -zxf rancher-k8s.tar.gz
+      #     rm rancher-k8s.tar.gz
+
+      
       - name: Read App Secrets
         uses: rancher-eio/read-vault-secrets@main
         with:
           secrets: |
             secret/data/github/repo/${{ github.repository }}/github/app-credentials appId | APP_ID ;
             secret/data/github/repo/${{ github.repository }}/github/app-credentials privateKey | PRIVATE_KEY
-
       - name: Create App Token
         uses: actions/create-github-app-token@v1
         id: app-token
@@ -70,28 +109,8 @@ jobs:
           app-id: ${{ env.APP_ID }}
           private-key: ${{ env.PRIVATE_KEY }}
 
-      - name: Fix the not-a-git-repository issue
-        run: |
-          apk -U add git
-          git config --global --add safe.directory "$GITHUB_WORKSPACE"
-          git config --global user.email "41898282+github-actions[bot]@users.noreply.github.com"
-          git config --global user.name "github-actions[bot]"
-          git config --global url.https://${{ steps.app-token.outputs.token }}@github.com/.insteadOf https://github.com/
-
-      - name: Download git repo from artifact
-        uses: actions/download-artifact@v4
-        with:
-          name: git-repo
-
-      - name: Extract Artifact
-        run: |
-          tar -zxf rancher-k8s.tar.gz
-          rm rancher-k8s.tar.gz
-
       - name: Build with Dapper for ${{ matrix.branches }}
-        run: |
-          git checkout ${{ matrix.branches }}
-          dapper ci
+        run: dapper ci
 
       - name: List the bin for ${{ matrix.branches }}
         run: ls -lR output/bin
@@ -100,13 +119,6 @@ jobs:
         run: |
           # To stash any changes created by dapper CI run
           git stash --all
-
-          if ! $(git push --quiet --no-progress origin $RELEASE_BRANCH > /dev/null); then
-            echo "[ERROR] Failed while pushing the branch $RELEASE_BRANCH to rancher repository. Skipping the version $RELEASE_BRANCH."
-            exit 1
-          else
-            echo "[INFO] Successfully pushed branch $RELEASE_BRANCH: https://github.com/rancher/kubernetes/tree/$RELEASE_BRANCH"
-          fi
 
           # Remove the 'release-' prefix to create the tag name
           TAG="${RELEASE_BRANCH#release-}"
