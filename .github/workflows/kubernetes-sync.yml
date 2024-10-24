@@ -56,12 +56,27 @@ jobs:
         branches: ${{ fromJSON(needs.create-branches.outputs.new-release-branches) }}
       fail-fast: false
     steps:
+      - name: Read App Secrets
+        uses: rancher-eio/read-vault-secrets@main
+        with:
+          secrets: |
+            secret/data/github/repo/${{ github.repository }}/github/app-credentials appId | APP_ID ;
+            secret/data/github/repo/${{ github.repository }}/github/app-credentials privateKey | PRIVATE_KEY
+
+      - name: Create App Token
+        uses: actions/create-github-app-token@v1
+        id: app-token
+        with:
+          app-id: ${{ env.APP_ID }}
+          private-key: ${{ env.PRIVATE_KEY }}
+
       - name: Fix the not-a-git-repository issue
         run: |
           apk -U add git
           git config --global --add safe.directory "$GITHUB_WORKSPACE"
           git config --global user.email "41898282+github-actions[bot]@users.noreply.github.com"
           git config --global user.name "github-actions[bot]"
+          git config --global url.https://${{ steps.app-token.outputs.token }}@github.com/.insteadOf https://github.com/
 
       - name: Download git repo from artifact
         uses: actions/download-artifact@v4
@@ -80,20 +95,6 @@ jobs:
 
       - name: List the bin for ${{ matrix.branches }}
         run: ls -lR output/bin
-      
-      - name: Read App Secrets
-        uses: rancher-eio/read-vault-secrets@main
-        with:
-          secrets: |
-            secret/data/github/repo/${{ github.repository }}/github/app-credentials appId | APP_ID ;
-            secret/data/github/repo/${{ github.repository }}/github/app-credentials privateKey | PRIVATE_KEY
-
-      - name: Create App Token
-        uses: actions/create-github-app-token@v1
-        id: app-token
-        with:
-          app-id: ${{ env.APP_ID }}
-          private-key: ${{ env.PRIVATE_KEY }}
 
       - name: Push release tag for ${{ matrix.branches }}
         run: |
