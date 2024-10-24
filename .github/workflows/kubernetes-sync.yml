@@ -7,7 +7,9 @@ on:
 
 jobs:
   create-branches:
-    runs-on: ubuntu-latest
+    runs-on: runs-on,runner=4cpu-linux-x64,run-id=${{ github.run_id }}
+    permissions:
+      id-token: write
     outputs:
       new-release-branches: ${{ steps.create-release-branches.outputs.NEW_RELEASE_BRANCHES }}
     steps:
@@ -24,11 +26,18 @@ jobs:
           git config --global user.email "41898282+github-actions[bot]@users.noreply.github.com"
           git config --global user.name "github-actions[bot]"
 
-      # - name: Retrieve token from vault
-      #   uses: rancher-eio/read-vault-secrets@main
-      #   with:
-      #     secrets: |
-      #       secret/data/github/repo/${{ github.repository }}/github-token/credentials token | PAT_TOKEN ;
+      - name: Read App Secrets
+        uses: rancher-eio/read-vault-secrets@main
+        with:
+          secrets: |
+            secret/data/github/repo/${{ github.repository }}/github/app-credentials appId | APP_ID ;
+            secret/data/github/repo/${{ github.repository }}/github/app-credentials privateKey | PRIVATE_KEY
+      - name: Create App Token
+        uses: actions/create-github-app-token@v1
+        id: app-token
+        with:
+          app-id: ${{ env.APP_ID }}
+          private-key: ${{ env.PRIVATE_KEY }}
 
       - name: Fetch the new tags from kubernetes/kubernetes repository
         run: $GITHUB_WORKSPACE/rancher-k8s/scripts/check-for-new-tag.sh
@@ -39,7 +48,7 @@ jobs:
           cd rancher-k8s
           $GITHUB_WORKSPACE/rancher-k8s/scripts/create-release-branch.sh
         env:
-          GITHUB_TOKEN: ${{ secrets.PAT_TOKEN }}
+          GITHUB_TOKEN: ${{ steps.app-token.outputs.token }}
 
       # - name: 'Tar files'
       #   run: |
@@ -53,7 +62,7 @@ jobs:
 
   build-and-validate:
     needs: create-branches
-    runs-on: ubuntu-latest
+    runs-on: runs-on,runner=4cpu-linux-x64,run-id=${{ github.run_id }}
     container:
       image: rancher/dapper:v0.6.0
     permissions:
@@ -86,11 +95,19 @@ jobs:
       #     tar -zxf rancher-k8s.tar.gz
       #     rm rancher-k8s.tar.gz
 
-      # - name: Retrieve token from vault
-      #   uses: rancher-eio/read-vault-secrets@main
-      #   with:
-      #     secrets: |
-      #       secret/data/github/repo/${{ github.repository }}/github-token/credentials token | PAT_TOKEN ;
+      
+      - name: Read App Secrets
+        uses: rancher-eio/read-vault-secrets@main
+        with:
+          secrets: |
+            secret/data/github/repo/${{ github.repository }}/github/app-credentials appId | APP_ID ;
+            secret/data/github/repo/${{ github.repository }}/github/app-credentials privateKey | PRIVATE_KEY
+      - name: Create App Token
+        uses: actions/create-github-app-token@v1
+        id: app-token
+        with:
+          app-id: ${{ env.APP_ID }}
+          private-key: ${{ env.PRIVATE_KEY }}
 
       - name: Build with Dapper for ${{ matrix.branches }}
         run: dapper ci
@@ -121,5 +138,5 @@ jobs:
               echo "[INFO] Successfully pushed tag $TAG: https://github.com/rancher/kubernetes/releases/tag/$TAG"
           fi
         env:
-          GITHUB_TOKEN: ${{ secrets.PAT_TOKEN }}
+          GITHUB_TOKEN: ${{ steps.app-token.outputs.token }}
           RELEASE_BRANCH: ${{ matrix.branches }}
